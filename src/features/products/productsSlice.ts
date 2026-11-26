@@ -1,5 +1,8 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
+import { usdToVnd } from '../../lib/pricing'
 import type { Product } from '../../types'
+
+const PRODUCTS_URL = 'https://fakestoreapi.com/products'
 
 interface ApiProduct {
   id: number
@@ -8,6 +11,7 @@ interface ApiProduct {
   category: string
   image: string
   price: number
+  rating?: { rate?: unknown; count?: unknown }
 }
 
 interface ProductsState {
@@ -31,17 +35,18 @@ function isApiProduct(value: unknown): value is ApiProduct {
   )
 }
 
+const toNumber = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0
+
 export const fetchProducts = createAsyncThunk<
   Product[],
   void,
   { rejectValue: string }
 >('products/fetchProducts', async (_, { rejectWithValue }) => {
   try {
-    const response = await fetch('https://fakestoreapi.com/products')
+    const response = await fetch(PRODUCTS_URL)
     if (!response.ok) {
-      return rejectWithValue(
-        `Không thể tải sản phẩm (HTTP ${response.status}).`,
-      )
+      return rejectWithValue(`Không thể tải sản phẩm (HTTP ${response.status}).`)
     }
 
     const data: unknown = await response.json()
@@ -55,13 +60,17 @@ export const fetchProducts = createAsyncThunk<
       description: product.description,
       category: product.category,
       image: product.image,
-      price: product.price,
+      price: usdToVnd(product.price),
+      rating: {
+        rate: toNumber(product.rating?.rate),
+        count: toNumber(product.rating?.count),
+      },
     }))
   } catch (error) {
     console.error('Không thể tải danh sách sản phẩm.', error)
     return rejectWithValue(
       error instanceof Error
-        ? error.message
+        ? `Không thể kết nối tới máy chủ sản phẩm: ${error.message}`
         : 'Đã xảy ra lỗi không xác định khi tải sản phẩm.',
     )
   }
