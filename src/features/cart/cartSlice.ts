@@ -1,22 +1,28 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import { loadCartItems } from '../../cartStorage'
-import type { CartItem, Product } from '../../types'
+import { DISCOUNT_CODES } from '../../lib/pricing'
+import { STORAGE_KEYS, isCartItem, loadFromStorage } from '../../lib/storage'
+import type { CartItem, Product, ShippingMethod } from '../../types'
 
-const storedCart = loadCartItems()
+const storedCart = loadFromStorage<CartItem[]>(
+  STORAGE_KEYS.cart,
+  (value): value is CartItem[] => Array.isArray(value) && value.every(isCartItem),
+  [],
+  'giỏ hàng',
+)
+
+export const MAX_QUANTITY = 99
 
 export interface CartState {
   items: CartItem[]
   discountCode: string | null
-  taxRate: number
-  shippingCost: number
+  shippingMethod: ShippingMethod
   storageError: string | null
 }
 
 const initialState: CartState = {
-  items: storedCart.items,
+  items: storedCart.value,
   discountCode: null,
-  taxRate: 0.1,
-  shippingCost: 10,
+  shippingMethod: 'standard',
   storageError: storedCart.error,
 }
 
@@ -24,20 +30,29 @@ const cartSlice = createSlice({
   name: 'cart',
   initialState,
   reducers: {
-    addToCart: (state, action: PayloadAction<Product>) => {
-      const existingItem = state.items.find(
-        (item) => item.id === action.payload.id,
-      )
+    addToCart: (
+      state,
+      action: PayloadAction<{ product: Product; quantity?: number }>,
+    ) => {
+      const { product, quantity = 1 } = action.payload
+      const existing = state.items.find((item) => item.id === product.id)
 
-      if (existingItem) {
-        existingItem.quantity += 1
+      if (existing) {
+        existing.quantity = Math.min(MAX_QUANTITY, existing.quantity + quantity)
       } else {
-        state.items.push({ ...action.payload, quantity: 1 })
+        state.items.push({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          image: product.image,
+          price: product.price,
+          quantity: Math.min(MAX_QUANTITY, quantity),
+        })
       }
     },
     increaseQuantity: (state, action: PayloadAction<number>) => {
       const item = state.items.find((cartItem) => cartItem.id === action.payload)
-      if (item) item.quantity += 1
+      if (item && item.quantity < MAX_QUANTITY) item.quantity += 1
     },
     decreaseQuantity: (state, action: PayloadAction<number>) => {
       const item = state.items.find((cartItem) => cartItem.id === action.payload)
@@ -48,15 +63,17 @@ const cartSlice = createSlice({
     },
     clearCart: (state) => {
       state.items = []
+      state.discountCode = null
     },
     applyDiscount: (state, action: PayloadAction<string>) => {
-      state.discountCode = action.payload.trim().toUpperCase()
+      const code = action.payload.trim().toUpperCase()
+      if (DISCOUNT_CODES[code]) state.discountCode = code
     },
     clearDiscount: (state) => {
       state.discountCode = null
     },
-    setShippingCost: (state, action: PayloadAction<number>) => {
-      state.shippingCost = action.payload
+    setShippingMethod: (state, action: PayloadAction<ShippingMethod>) => {
+      state.shippingMethod = action.payload
     },
     setCartStorageError: (state, action: PayloadAction<string | null>) => {
       state.storageError = action.payload
@@ -72,7 +89,7 @@ export const {
   clearCart,
   applyDiscount,
   clearDiscount,
-  setShippingCost,
+  setShippingMethod,
   setCartStorageError,
 } = cartSlice.actions
 
